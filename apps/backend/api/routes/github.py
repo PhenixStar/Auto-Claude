@@ -8,15 +8,18 @@ the Electron IPC handlers (github/ subdirectory).
 
 from __future__ import annotations
 
-import json
+import os
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/github", tags=["github"])
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
+
+router = APIRouter(prefix="/api/github", tags=["github"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -52,52 +55,65 @@ class AutoFixRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-_STORE_DIR = Path.home() / ".auto-claude-web"
-_STORE_PATH = _STORE_DIR / "projects.json"
 _AUTO_CLAUDE_DIRS = (".auto-claude", "auto-claude")
 
 
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    if _STORE_PATH.exists():
-        data = json.loads(_STORE_PATH.read_text())
-        for p in data.get("projects", []):
-            if p.get("id") == project_id:
-                return p
-    raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-
-
 def _get_github_config(project_id: str) -> dict[str, str]:
-    """Read GitHub token and repo from the project's .env file."""
-    project = _find_project(project_id)
-    project_path = Path(project["path"])
+    """Read GitHub token and repo from the project's .env file.
 
-    env_file: Path | None = None
-    for d in _AUTO_CLAUDE_DIRS:
-        candidate = project_path / d / ".env"
-        if candidate.exists():
-            env_file = candidate
-            break
+    Validates that the project path is a real directory and resolves
+    symlinks to prevent path-traversal attacks. Never leaks token
+    values in error payloads.
+    """
+    try:
+        project = find_project(project_id)
+        project_path = Path(project["path"])
 
-    if env_file is None:
-        raise HTTPException(status_code=400, detail="No .env file found for project")
+        # Resolve symlinks and validate the path is a real directory
+        resolved = Path(os.path.realpath(os.path.abspath(project_path)))
+        if not resolved.exists() or not resolved.is_dir():
+            raise HTTPException(
+                status_code=400, detail="Project path is invalid or does not exist"
+            )
 
-    env_vars: dict[str, str] = {}
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        env_vars[key.strip()] = value.strip().strip("'\"")
+        env_file: Path | None = None
+        for d in _AUTO_CLAUDE_DIRS:
+            candidate = resolved / d / ".env"
+            if candidate.exists():
+                env_file = candidate
+                break
 
-    token = env_vars.get("GITHUB_TOKEN", "")
-    repo = env_vars.get("GITHUB_REPO", "")
-    if not token:
-        raise HTTPException(status_code=400, detail="GITHUB_TOKEN not configured")
-    if not repo:
-        raise HTTPException(status_code=400, detail="GITHUB_REPO not configured")
+        if env_file is None:
+            raise HTTPException(
+                status_code=400, detail="No .env file found for project"
+            )
 
-    return {"token": token, "repo": repo}
+        env_vars: dict[str, str] = {}
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            env_vars[key.strip()] = value.strip().strip("'\"")
+
+        token = env_vars.get("GITHUB_TOKEN", "")
+        repo = env_vars.get("GITHUB_REPO", "")
+        if not token:
+            raise HTTPException(
+                status_code=400, detail="GITHUB_TOKEN not configured"
+            )
+        if not repo:
+            raise HTTPException(
+                status_code=400, detail="GITHUB_REPO not configured"
+            )
+
+        return {"token": token, "repo": repo}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=500, detail="Failed to read GitHub configuration"
+        )
 
 
 def _github_headers(token: str) -> dict[str, str]:
@@ -118,7 +134,7 @@ _GITHUB_API = "https://api.github.com"
 
 @router.post("/oauth/callback")
 async def oauth_callback(body: OAuthCallbackRequest) -> dict[str, Any]:
-    """Handle GitHub OAuth callback and exchange code for token."""
+    """OAuth callback -- returns authorization code to frontend for token exchange."""
     return {"success": True, "data": {"code": body.code, "state": body.state}}
 
 

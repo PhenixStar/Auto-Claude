@@ -15,10 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-router = APIRouter(prefix="/api/projects", tags=["projects"])
+from ..dependencies.auth import verify_auth
+
+router = APIRouter(prefix="/api/projects", tags=["projects"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -98,6 +100,25 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Marker files/dirs that indicate a directory is a project root
+_PROJECT_MARKERS = {
+    ".git", "package.json", "pyproject.toml", "Cargo.toml",
+    "go.mod", "Makefile", "pom.xml", "build.gradle", "Gemfile",
+    "composer.json", ".auto-claude", "auto-claude",
+}
+
+
+def _is_project_directory(path: str) -> bool:
+    """Check if a directory looks like a project root by scanning for marker files."""
+    if not os.path.isdir(path):
+        return False
+    try:
+        entries = set(os.listdir(path))
+    except OSError:
+        return False
+    return bool(entries & _PROJECT_MARKERS)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -139,6 +160,12 @@ async def add_project(body: AddProjectRequest) -> dict[str, Any]:
 
     if not os.path.isdir(project_path):
         raise HTTPException(status_code=400, detail="Directory does not exist")
+
+    if not _is_project_directory(project_path):
+        raise HTTPException(
+            status_code=400,
+            detail="Directory does not appear to be a project root (no .git, package.json, pyproject.toml, etc.)",
+        )
 
     store = _load_store()
     projects: list[dict[str, Any]] = store.get("projects", [])

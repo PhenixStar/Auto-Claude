@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 _PROJECT_INDEX_CACHE: dict[str, tuple[dict[str, Any], dict[str, bool], float]] = {}
 _CACHE_TTL_SECONDS = 300  # 5 minute TTL
+_MAX_CACHE_SIZE = 64  # Prevent unbounded growth
 _CACHE_LOCK = threading.Lock()  # Protects _PROJECT_INDEX_CACHE access
 
 
@@ -101,6 +102,10 @@ def _get_cached_project_data(
                     )
                 # Return deep copies to prevent callers from corrupting the cache
                 return copy.deepcopy(cached_index), copy.deepcopy(cached_capabilities)
+        # Evict oldest entries if cache exceeds max size
+        if len(_PROJECT_INDEX_CACHE) >= _MAX_CACHE_SIZE:
+            oldest_key = min(_PROJECT_INDEX_CACHE, key=lambda k: _PROJECT_INDEX_CACHE[k][2])
+            del _PROJECT_INDEX_CACHE[oldest_key]
         # Either no cache entry or it's expired - store our fresh data
         _PROJECT_INDEX_CACHE[key] = (project_index, project_capabilities, time.time())
 

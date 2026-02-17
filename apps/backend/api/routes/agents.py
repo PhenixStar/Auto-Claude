@@ -10,12 +10,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .tasks import _find_project, _read_json, _specs_dir
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
+from .tasks import _read_json, _specs_dir
 
-router = APIRouter(prefix="/api", tags=["agents"])
+router = APIRouter(prefix="/api", tags=["agents"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -24,7 +26,7 @@ router = APIRouter(prefix="/api", tags=["agents"])
 _IMPLEMENTATION_PLAN = "implementation_plan.json"
 _BUILD_PROGRESS = "build-progress.txt"
 
-# In-memory agent state (will be replaced by real agent manager integration)
+# NOTE: In-memory state for REST API. Real agent state managed by Electron main process.
 _agent_state: dict[str, dict[str, Any]] = {}
 
 
@@ -58,7 +60,7 @@ async def start_agent(task_id: str, body: StartAgentRequest) -> dict[str, Any]:
     This is a placeholder that records intent; real agent spawning will be
     integrated when the agent manager is ported to the web backend.
     """
-    project = _find_project(body.project_id)
+    project = find_project(body.project_id)
     specs_path = _specs_dir(project)
     spec_folder = specs_path / task_id
 
@@ -117,7 +119,7 @@ async def get_agent_status(task_id: str, project_id: str) -> dict[str, Any]:
         return {"success": True, "data": state}
 
     # Fall back to reading plan file for historical status
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
     spec_folder = specs_path / task_id
 
@@ -161,7 +163,7 @@ async def get_agent_logs(task_id: str, project_id: str) -> dict[str, Any]:
 
     Requires project_id as a query parameter. Reads from build-progress.txt.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
     spec_folder = specs_path / task_id
 

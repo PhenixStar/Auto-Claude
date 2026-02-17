@@ -12,11 +12,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from .projects import _load_store
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
 
-router = APIRouter(prefix="/api/projects", tags=["context"])
+router = APIRouter(prefix="/api/projects", tags=["context"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -34,15 +35,6 @@ _ENV_FILE = ".env"
 # ---------------------------------------------------------------------------
 
 
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    store = _load_store()
-    for project in store.get("projects", []):
-        if project["id"] == project_id:
-            return project
-    raise HTTPException(status_code=404, detail="Project not found")
-
-
 def _auto_claude_dir(project: dict[str, Any]) -> Path:
     """Return the .auto-claude directory for a project."""
     return Path(project["path"]) / project.get("autoBuildPath", _AUTO_CLAUDE_DIRS[0])
@@ -56,7 +48,7 @@ def _auto_claude_dir(project: dict[str, Any]) -> Path:
 @router.get("/{project_id}/context")
 async def get_context(project_id: str) -> dict[str, Any]:
     """Get project context information including environment config."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     ac_dir = _auto_claude_dir(project)
 
     # Read .env file if present
@@ -86,7 +78,7 @@ async def get_context(project_id: str) -> dict[str, Any]:
 @router.get("/{project_id}/memories")
 async def get_memories(project_id: str) -> dict[str, Any]:
     """Get stored memories for a project."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     ac_dir = _auto_claude_dir(project)
 
     memories_path = ac_dir / _CONTEXT_DIR / _MEMORIES_FILE
@@ -104,7 +96,7 @@ async def get_memories(project_id: str) -> dict[str, Any]:
 @router.get("/{project_id}/project-index")
 async def get_project_index(project_id: str) -> dict[str, Any]:
     """Get the project index (file structure, technologies, etc.)."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     ac_dir = _auto_claude_dir(project)
 
     index_path = ac_dir / _CONTEXT_DIR / _PROJECT_INDEX_FILE

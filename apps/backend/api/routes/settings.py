@@ -12,10 +12,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+from ..dependencies.auth import verify_auth
+
+router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Store — JSON-file-backed app settings

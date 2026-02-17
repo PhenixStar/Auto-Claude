@@ -1,9 +1,9 @@
-import { spawn, execSync, ChildProcess } from 'child_process';
+import { spawn, execFileSync, ChildProcess } from 'child_process';
 import { existsSync, readdirSync } from 'fs';
 import path from 'path';
 import { EventEmitter } from 'events';
 import { app } from 'electron';
-import { findPythonCommand, getBundledPythonPath } from './python-detector';
+import { findPythonCommand, getBundledPythonPath, parsePythonCommand } from './python-detector';
 import { isLinux, isWindows, getPathDelimiter } from './platform';
 import { getIsolatedGitEnv } from './utils/git-isolation';
 
@@ -216,7 +216,7 @@ if sys.version_info >= (3, 12):
     import real_ladybug
     import graphiti_core
 `;
-      execSync(`"${venvPython}" -c "${checkScript.replace(/\n/g, '; ').replace(/; ; /g, '; ')}"`, {
+      execFileSync(venvPython, ['-c', checkScript], {
         stdio: 'pipe',
         timeout: 15000,
         encoding: 'utf-8'
@@ -248,7 +248,8 @@ if sys.version_info >= (3, 12):
     try {
       // Get the actual executable path from the command
       // For commands like "py -3", we need to resolve to the actual executable
-      const pythonPath = execSync(`${pythonCmd} -c "import sys; print(sys.executable)"`, {
+      const [command, args] = parsePythonCommand(pythonCmd);
+      const pythonPath = execFileSync(command, [...args, '-c', 'import sys; print(sys.executable)'], {
         stdio: 'pipe',
         timeout: 5000,
         encoding: 'utf-8'

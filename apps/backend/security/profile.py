@@ -6,6 +6,7 @@ Manages security profiles for projects, including caching and validation.
 Uses project_analyzer to create dynamic security profiles based on detected stacks.
 """
 
+import threading
 from pathlib import Path
 
 from project_analyzer import (
@@ -19,7 +20,9 @@ from .constants import ALLOWLIST_FILENAME, PROFILE_FILENAME
 # GLOBAL STATE
 # =============================================================================
 
-# Cache the security profile to avoid re-analyzing on every command
+# Cache the security profile to avoid re-analyzing on every command.
+# All access to these globals is protected by _profile_lock for thread safety.
+_profile_lock = threading.Lock()
 _cached_profile: SecurityProfile | None = None
 _cached_project_dir: Path | None = None
 _cached_spec_dir: Path | None = None  # Track spec directory for cache key
@@ -83,35 +86,36 @@ def get_security_profile(
     project_dir = Path(project_dir).resolve()
     resolved_spec_dir = Path(spec_dir).resolve() if spec_dir else None
 
-    # Check if cache is valid (both project_dir and spec_dir must match)
-    if (
-        _cached_profile is not None
-        and _cached_project_dir == project_dir
-        and _cached_spec_dir == resolved_spec_dir
-    ):
-        # Check if files have been created or modified since caching
-        current_profile_mtime = _get_profile_mtime(project_dir)
-        current_allowlist_mtime = _get_allowlist_mtime(project_dir)
-
-        # Cache is valid if both mtimes are unchanged
+    with _profile_lock:
+        # Check if cache is valid (both project_dir and spec_dir must match)
         if (
-            current_profile_mtime == _cached_profile_mtime
-            and current_allowlist_mtime == _cached_allowlist_mtime
+            _cached_profile is not None
+            and _cached_project_dir == project_dir
+            and _cached_spec_dir == resolved_spec_dir
         ):
-            return _cached_profile
+            # Check if files have been created or modified since caching
+            current_profile_mtime = _get_profile_mtime(project_dir)
+            current_allowlist_mtime = _get_allowlist_mtime(project_dir)
 
-        # File was created, modified, or deleted - invalidate cache
-        # (This happens when analyzer creates the file after agent starts,
-        # or when user adds/updates the allowlist)
+            # Cache is valid if both mtimes are unchanged
+            if (
+                current_profile_mtime == _cached_profile_mtime
+                and current_allowlist_mtime == _cached_allowlist_mtime
+            ):
+                return _cached_profile
 
-    # Analyze and cache
-    _cached_profile = get_or_create_profile(project_dir, spec_dir)
-    _cached_project_dir = project_dir
-    _cached_spec_dir = resolved_spec_dir
-    _cached_profile_mtime = _get_profile_mtime(project_dir)
-    _cached_allowlist_mtime = _get_allowlist_mtime(project_dir)
+            # File was created, modified, or deleted - invalidate cache
+            # (This happens when analyzer creates the file after agent starts,
+            # or when user adds/updates the allowlist)
 
-    return _cached_profile
+        # Analyze and cache
+        _cached_profile = get_or_create_profile(project_dir, spec_dir)
+        _cached_project_dir = project_dir
+        _cached_spec_dir = resolved_spec_dir
+        _cached_profile_mtime = _get_profile_mtime(project_dir)
+        _cached_allowlist_mtime = _get_allowlist_mtime(project_dir)
+
+        return _cached_profile
 
 
 def reset_profile_cache() -> None:
@@ -121,8 +125,9 @@ def reset_profile_cache() -> None:
     global _cached_spec_dir
     global _cached_profile_mtime
     global _cached_allowlist_mtime
-    _cached_profile = None
-    _cached_project_dir = None
-    _cached_spec_dir = None
-    _cached_profile_mtime = None
-    _cached_allowlist_mtime = None
+    with _profile_lock:
+        _cached_profile = None
+        _cached_project_dir = None
+        _cached_spec_dir = None
+        _cached_profile_mtime = None
+        _cached_allowlist_mtime = None

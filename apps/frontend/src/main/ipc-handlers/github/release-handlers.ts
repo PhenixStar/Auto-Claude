@@ -3,7 +3,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { execSync, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { IPC_CHANNELS } from '../../../shared/constants';
@@ -94,9 +94,8 @@ export function registerCreateRelease(): void {
       try {
         // Build and execute release command
         const args = buildReleaseArgs(version, releaseNotes, options);
-        const command = `gh ${args.map(a => `"${a.replace(/"/g, '\\"')}"`).join(' ')}`;
 
-        const output = execSync(command, {
+        const output = execFileSync(getToolPath('gh'), args, {
           cwd: project.path,
           encoding: 'utf-8',
           stdio: 'pipe'

@@ -16,12 +16,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .projects import _load_store
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
 
-router = APIRouter(prefix="/api", tags=["tasks"])
+router = APIRouter(prefix="/api", tags=["tasks"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,15 +66,6 @@ class UpdateStatusRequest(BaseModel):
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    store = _load_store()
-    for project in store.get("projects", []):
-        if project["id"] == project_id:
-            return project
-    raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _specs_dir(project: dict[str, Any]) -> Path:
@@ -191,7 +183,7 @@ def _build_task(
 @router.get("/projects/{project_id}/tasks")
 async def list_tasks(project_id: str) -> dict[str, Any]:
     """List all tasks/specs for a project."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
 
     tasks: list[dict[str, Any]] = []
@@ -215,7 +207,7 @@ async def list_tasks(project_id: str) -> dict[str, Any]:
 @router.post("/projects/{project_id}/tasks")
 async def create_task(project_id: str, body: CreateTaskRequest) -> dict[str, Any]:
     """Create a new task/spec for a project."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
 
     # Determine title
@@ -295,7 +287,7 @@ async def get_task(task_id: str, project_id: str) -> dict[str, Any]:
 
     Requires project_id as a query parameter to locate the spec on disk.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
     spec_folder = specs_path / task_id
 
@@ -314,7 +306,7 @@ async def update_task_status(
 
     Requires project_id as a query parameter.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
     spec_folder = specs_path / task_id
 
@@ -348,7 +340,7 @@ async def delete_task(task_id: str, project_id: str) -> dict[str, Any]:
 
     Requires project_id as a query parameter.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
     specs_path = _specs_dir(project)
     spec_folder = specs_path / task_id
 

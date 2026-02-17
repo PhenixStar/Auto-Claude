@@ -12,12 +12,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .projects import _load_store
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
 
-router = APIRouter(prefix="/api/projects", tags=["roadmap"])
+router = APIRouter(prefix="/api/projects", tags=["roadmap"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -43,15 +44,6 @@ class RoadmapGenerateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    store = _load_store()
-    for project in store.get("projects", []):
-        if project["id"] == project_id:
-            return project
-    raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _roadmap_dir(project: dict[str, Any]) -> Path:
@@ -93,7 +85,7 @@ def _load_competitor_analysis(project: dict[str, Any]) -> dict[str, Any] | None:
 @router.get("/{project_id}/roadmap")
 async def get_roadmap(project_id: str) -> dict[str, Any]:
     """Get the current roadmap for a project."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     roadmap = _load_roadmap(project)
 
     result: dict[str, Any] = {"roadmap": roadmap}
@@ -115,7 +107,7 @@ async def generate_roadmap(
     In the web version, this queues the generation task. The actual AI
     generation runs asynchronously and progress is reported via Socket.IO.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
 
     # Ensure roadmap directory exists
     rd = _roadmap_dir(project)

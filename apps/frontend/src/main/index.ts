@@ -201,6 +201,9 @@ function createWindow(): void {
     icon: getIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
+      // SECURITY: sandbox disabled because node-pty requires native module access.
+      // PTY daemon architecture may allow re-enabling in future.
+      // Context isolation is enabled to compensate.
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,

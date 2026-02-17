@@ -14,13 +14,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .projects import _load_store
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
 
-router = APIRouter(prefix="/api/projects", tags=["insights"])
+router = APIRouter(prefix="/api/projects", tags=["insights"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,15 +46,6 @@ class InsightsQueryRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    store = _load_store()
-    for project in store.get("projects", []):
-        if project["id"] == project_id:
-            return project
-    raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _insights_dir(project: dict[str, Any]) -> Path:
@@ -90,7 +82,7 @@ async def query_insights(
     In the web version, this starts the AI query and streams back results
     as Server-Sent Events for real-time display.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
 
     # Ensure insights directory exists
     d = _insights_dir(project)

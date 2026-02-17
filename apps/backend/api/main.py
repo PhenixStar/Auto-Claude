@@ -6,6 +6,9 @@ Main FastAPI application with CORS middleware, Socket.IO integration,
 and lifespan events. Serves as the backend for the Next.js web frontend.
 """
 
+from __future__ import annotations
+
+import os
 from contextlib import asynccontextmanager
 
 import socketio
@@ -30,10 +33,25 @@ from .websocket.agent_ns import register_agent_namespace
 from .websocket.events_ns import register_events_namespace
 from .websocket.terminal_ns import get_terminal_service, register_terminal_namespace
 
+# ---------------------------------------------------------------------------
+# CORS configuration
+# ---------------------------------------------------------------------------
+
+_DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3001,http://localhost:3002"
+
+
+def _get_cors_origins() -> list[str]:
+    """Parse allowed CORS origins from env or use defaults."""
+    raw = os.environ.get("CORS_ORIGINS", _DEFAULT_ORIGINS)
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+_cors_origins = _get_cors_origins()
+
 # Socket.IO async server for real-time communication
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=["http://localhost:3000", "http://localhost:3001"],
+    cors_allowed_origins=_cors_origins,
 )
 
 # Register Socket.IO namespaces
@@ -60,7 +78,7 @@ app = FastAPI(
 # CORS middleware for Next.js dev servers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

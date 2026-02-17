@@ -39,6 +39,7 @@ from .hooks import bash_security_hook, validate_command
 
 # Command parsing utilities
 from .parser import (
+    detect_dangerous_syntax,
     extract_commands,
     get_command_for_validation,
     split_command_segments,
@@ -88,6 +89,7 @@ __all__ = [
     "get_security_profile",
     "reset_profile_cache",
     # Parsing utilities
+    "detect_dangerous_syntax",
     "extract_commands",
     "split_command_segments",
     "get_command_for_validation",

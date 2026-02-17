@@ -12,13 +12,16 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api", tags=["terminals"])
+from ..dependencies.auth import verify_auth
+
+router = APIRouter(prefix="/api", tags=["terminals"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # In-memory terminal session store (will be replaced by real PTY integration)
+# NOTE: In-memory state for REST API. Real terminal state managed by WebSocket/PTY daemon.
 # ---------------------------------------------------------------------------
 
 _terminals: dict[str, dict[str, Any]] = {}

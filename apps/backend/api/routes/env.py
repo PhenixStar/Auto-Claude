@@ -8,35 +8,22 @@ Mirrors the data contract from the Electron IPC handlers (env-handlers.ts).
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/projects", tags=["environment"])
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
+
+router = APIRouter(prefix="/api/projects", tags=["environment"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_STORE_DIR = Path.home() / ".auto-claude-web"
-_STORE_PATH = _STORE_DIR / "projects.json"
 _AUTO_CLAUDE_DIRS = (".auto-claude", "auto-claude")
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    if _STORE_PATH.exists():
-        try:
-            store = json.loads(_STORE_PATH.read_text(encoding="utf-8"))
-            for project in store.get("projects", []):
-                if project["id"] == project_id:
-                    return project
-        except (json.JSONDecodeError, OSError):
-            pass
-    raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _env_path(project: dict[str, Any]) -> Path:
@@ -67,8 +54,32 @@ def _parse_env_file(content: str) -> dict[str, str]:
     return result
 
 
-def _env_to_config(env_vars: dict[str, str]) -> dict[str, Any]:
-    """Map .env variables to a ProjectEnvConfig-style dict."""
+_SENSITIVE_SUBSTRINGS = ("TOKEN", "SECRET", "KEY", "PASSWORD", "AUTH")
+
+
+def _mask_value(value: str) -> str:
+    """Mask a sensitive value, showing only the last 4 characters."""
+    if len(value) <= 4:
+        return "****"
+    return f"****{value[-4:]}"
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """Check if an env key name looks like it holds a secret."""
+    upper = key.upper()
+    return any(s in upper for s in _SENSITIVE_SUBSTRINGS)
+
+
+def _env_to_config(
+    env_vars: dict[str, str],
+    *,
+    mask_secrets: bool = False,
+) -> dict[str, Any]:
+    """Map .env variables to a ProjectEnvConfig-style dict.
+
+    When *mask_secrets* is True, values whose env key contains TOKEN,
+    SECRET, KEY, PASSWORD, or AUTH are replaced with ``****<last4>``.
+    """
     config: dict[str, Any] = {}
     _map = {
         "CLAUDE_CODE_OAUTH_TOKEN": "claudeOAuthToken",
@@ -86,9 +97,12 @@ def _env_to_config(env_vars: dict[str, str]) -> dict[str, Any]:
     }
     for env_key, config_key in _map.items():
         if env_key in env_vars:
-            config[config_key] = env_vars[env_key]
+            value = env_vars[env_key]
+            if mask_secrets and _is_sensitive_key(env_key):
+                value = _mask_value(value)
+            config[config_key] = value
 
-    # Boolean fields
+    # Boolean fields (never masked — they are true/false)
     _bool_map = {
         "LINEAR_REALTIME_SYNC": "linearRealtimeSync",
         "GITHUB_AUTO_SYNC": "githubAutoSync",
@@ -157,7 +171,7 @@ class EnvConfigUpdate(BaseModel):
 @router.get("/{project_id}/env")
 async def get_env(project_id: str) -> dict[str, Any]:
     """Read a project's environment configuration from its .env file."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     env_file = _env_path(project)
 
     if not env_file.exists():
@@ -166,7 +180,7 @@ async def get_env(project_id: str) -> dict[str, Any]:
     try:
         content = env_file.read_text(encoding="utf-8")
         env_vars = _parse_env_file(content)
-        config = _env_to_config(env_vars)
+        config = _env_to_config(env_vars, mask_secrets=True)
         return {"success": True, "data": config}
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Failed to read .env: {exc}")
@@ -175,7 +189,7 @@ async def get_env(project_id: str) -> dict[str, Any]:
 @router.put("/{project_id}/env")
 async def update_env(project_id: str, body: EnvConfigUpdate) -> dict[str, Any]:
     """Save a project's environment configuration to its .env file."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     env_file = _env_path(project)
 
     # Load existing env vars

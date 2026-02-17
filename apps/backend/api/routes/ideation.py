@@ -12,12 +12,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .projects import _load_store
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
 
-router = APIRouter(prefix="/api/projects", tags=["ideation"])
+router = APIRouter(prefix="/api/projects", tags=["ideation"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -42,15 +43,6 @@ class IdeationGenerateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    store = _load_store()
-    for project in store.get("projects", []):
-        if project["id"] == project_id:
-            return project
-    raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _ideation_dir(project: dict[str, Any]) -> Path:
@@ -81,7 +73,7 @@ def _load_session(project: dict[str, Any]) -> dict[str, Any] | None:
 @router.get("/{project_id}/ideas")
 async def get_ideas(project_id: str) -> dict[str, Any]:
     """Get the current ideation session for a project."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     session = _load_session(project)
     return {"session": session}
 
@@ -95,7 +87,7 @@ async def generate_ideas(
     In the web version, this queues the generation task. The actual AI
     generation runs asynchronously and progress is reported via Socket.IO.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
 
     # Ensure ideation directory exists
     d = _ideation_dir(project)

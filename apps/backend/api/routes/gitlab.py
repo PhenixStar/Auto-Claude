@@ -8,16 +8,18 @@ the Electron IPC handlers (gitlab/ subdirectory).
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/gitlab", tags=["gitlab"])
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
+
+router = APIRouter(prefix="/api/gitlab", tags=["gitlab"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -53,24 +55,12 @@ class AutoFixRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-_STORE_DIR = Path.home() / ".auto-claude-web"
-_STORE_PATH = _STORE_DIR / "projects.json"
 _AUTO_CLAUDE_DIRS = (".auto-claude", "auto-claude")
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    if _STORE_PATH.exists():
-        data = json.loads(_STORE_PATH.read_text())
-        for p in data.get("projects", []):
-            if p.get("id") == project_id:
-                return p
-    raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
 
 def _get_gitlab_config(project_id: str) -> dict[str, str]:
     """Read GitLab token, instance URL, and project from the project's .env file."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     project_path = Path(project["path"])
 
     env_file: Path | None = None

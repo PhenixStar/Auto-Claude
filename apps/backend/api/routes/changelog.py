@@ -11,12 +11,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from .projects import _load_store
+from ..dependencies.auth import verify_auth
+from ..dependencies.project import find_project
 
-router = APIRouter(prefix="/api/projects", tags=["changelog"])
+router = APIRouter(prefix="/api/projects", tags=["changelog"], dependencies=[Depends(verify_auth)])
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -39,20 +40,6 @@ class ChangelogGenerateRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _find_project(project_id: str) -> dict[str, Any]:
-    """Look up a project by ID from the store."""
-    store = _load_store()
-    for project in store.get("projects", []):
-        if project["id"] == project_id:
-            return project
-    raise HTTPException(status_code=404, detail="Project not found")
-
-
-# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -60,7 +47,7 @@ def _find_project(project_id: str) -> dict[str, Any]:
 @router.get("/{project_id}/changelog")
 async def get_changelog(project_id: str) -> dict[str, Any]:
     """Read the existing changelog for a project."""
-    project = _find_project(project_id)
+    project = find_project(project_id)
     changelog_path = Path(project["path"]) / _CHANGELOG_FILE
 
     content: str | None = None
@@ -82,7 +69,7 @@ async def generate_changelog(
     In the web version, this queues the generation task. The actual AI
     generation runs asynchronously and progress is reported via Socket.IO.
     """
-    project = _find_project(project_id)
+    project = find_project(project_id)
 
     return {
         "status": "queued",

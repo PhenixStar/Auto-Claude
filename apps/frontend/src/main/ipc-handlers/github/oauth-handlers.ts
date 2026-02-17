@@ -4,7 +4,7 @@
  */
 
 import { ipcMain, shell, BrowserWindow } from 'electron';
-import { execSync, execFileSync, execFile, spawn } from 'child_process';
+import { execFileSync, execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { IPC_CHANNELS } from '../../../shared/constants';
 import type { IPCResult } from '../../../shared/types';
@@ -295,7 +295,7 @@ export function registerStartGhAuth(): void {
           const args = ['auth', 'login', '--web', '--scopes', 'repo'];
           debugLog('Spawning: gh', args);
 
-          const ghProcess = spawn('gh', args, {
+          const ghProcess = spawn(getToolPath('gh'), args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             env: getAugmentedEnv()
           });
@@ -549,8 +549,9 @@ export function registerListUserRepos(): void {
         // Use gh repo list to get user's repositories
         // Format: owner/repo, description, visibility
         debugLog('Running: gh repo list --limit 100 --json nameWithOwner,description,isPrivate');
-        const output = execSync(
-          'gh repo list --limit 100 --json nameWithOwner,description,isPrivate',
+        const output = execFileSync(
+          getToolPath('gh'),
+          ['repo', 'list', '--limit', '100', '--json', 'nameWithOwner,description,isPrivate'],
           {
             encoding: 'utf-8',
             stdio: 'pipe',
@@ -656,7 +657,7 @@ export function registerGetGitHubBranches(): void {
         const apiEndpoint = `repos/${repo}/branches`;
         debugLog(`Running: gh api ${apiEndpoint} --paginate --jq '.[].name'`);
         const output = execFileSync(
-          'gh',
+          getToolPath('gh'),
           ['api', apiEndpoint, '--paginate', '--jq', '.[].name'],
           {
             encoding: 'utf-8',
@@ -736,7 +737,7 @@ export function registerCreateGitHubRepo(): void {
         args.push('--push');
 
         debugLog('Running: gh', args);
-        const output = execFileSync('gh', args, {
+        const output = execFileSync(getToolPath('gh'), args, {
           encoding: 'utf-8',
           cwd: options.projectPath,
           stdio: 'pipe',
@@ -810,7 +811,7 @@ export function registerAddGitRemote(): void {
 
         // Add the remote
         debugLog('Adding remote origin:', remoteUrl);
-        execFileSync('git', ['remote', 'add', 'origin', remoteUrl], {
+        execFileSync(getToolPath('git'), ['remote', 'add', 'origin', remoteUrl], {
           cwd: projectPath,
           encoding: 'utf-8',
           stdio: 'pipe'

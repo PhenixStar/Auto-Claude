@@ -89,14 +89,15 @@ class TerminalService:
         child_pid, master_fd = pty.fork()
 
         if child_pid == 0:
-            # Child process — exec shell
+            # Child process — exec shell with sanitized environment
             os.chdir(work_dir)
-            env = {
-                **os.environ,
+            from .terminal_env import build_terminal_env
+
+            env = build_terminal_env({
                 "TERM": "xterm-256color",
                 "COLORTERM": "truecolor",
                 "PROMPT_EOL_MARK": "",
-            }
+            })
             os.execvpe(shell, [shell, "-l"], env)
             # execvpe never returns
 

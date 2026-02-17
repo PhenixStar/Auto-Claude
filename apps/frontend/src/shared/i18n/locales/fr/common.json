@@ -425,6 +425,9 @@
     "taskCreated": "Tâche créée",
     "createTask": "Créer une tâche"
   },
+  "fileTree": {
+    "noFilesFound": "[FR] No files found"
+  },
   "ideation": {
     "converting": "Conversion...",
     "convertToTask": "Convertir en tâche Auto-Build",

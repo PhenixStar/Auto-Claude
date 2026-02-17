@@ -1,4 +1,4 @@
-import { execSync, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { existsSync, accessSync, constants } from 'fs';
 import path from 'path';
 import { app } from 'electron';
@@ -113,7 +113,8 @@ export function findPythonCommand(): string | null {
  */
 function getPythonVersion(pythonCmd: string): string | null {
   try {
-    const version = execSync(`${pythonCmd} --version`, {
+    const [command, args] = parsePythonCommand(pythonCmd);
+    const version = execFileSync(command, [...args, '--version'], {
       stdio: 'pipe',
       timeout: 5000,
       windowsHide: true

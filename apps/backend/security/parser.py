@@ -18,6 +18,44 @@ import shlex
 from pathlib import PurePosixPath, PureWindowsPath
 
 
+# Shell syntax patterns that could bypass command splitting and execute
+# arbitrary code via subshell injection. Each tuple is (regex, description).
+DANGEROUS_PATTERNS = [
+    (r"\$\(", "subshell substitution $(...)"),
+    (r"`[^`]+`", "backtick substitution"),
+    (r"<\(", "process substitution <(...)"),
+    (r">\(", "process substitution >(...)"),
+]
+
+
+def _strip_single_quoted(command: str) -> str:
+    """Remove single-quoted sections for pattern analysis.
+
+    In shell, single-quoted strings are literals -- $() inside them is not
+    executed. Replace them with empty double-quoted placeholders so the
+    dangerous-pattern scan only inspects executable portions.
+    """
+    return re.sub(r"'[^']*'", '""', command)
+
+
+def detect_dangerous_syntax(command: str) -> list[str]:
+    """Detect shell syntax that could bypass command splitting.
+
+    Scans the *executable* portions of the command (ignoring single-quoted
+    literals) for subshell / process substitution patterns.
+
+    Returns:
+        List of human-readable descriptions for each dangerous pattern found.
+        Empty list means the command is clean.
+    """
+    stripped = _strip_single_quoted(command)
+    warnings: list[str] = []
+    for pattern, description in DANGEROUS_PATTERNS:
+        if re.search(pattern, stripped):
+            warnings.append(description)
+    return warnings
+
+
 def _cross_platform_basename(path: str) -> str:
     """
     Extract the basename from a path in a cross-platform way.
@@ -186,10 +224,19 @@ def extract_commands(command_string: str) -> list[str]:
     Handles pipes, command chaining (&&, ||, ;), and subshells.
     Returns the base command names (without paths).
 
+    Blocks commands containing dangerous shell syntax (subshell / process
+    substitution) that could bypass command-level security checks.
+
     On Windows or when commands contain malformed quoting (common with
     Windows paths in bash-style commands), falls back to regex-based
     extraction to ensure security validation can proceed.
     """
+    # Fail-closed: block commands with subshell / process substitution
+    # patterns that could bypass the command allowlist.
+    dangerous = detect_dangerous_syntax(command_string)
+    if dangerous:
+        return []
+
     # If command contains Windows paths, use fallback parser directly
     # because shlex.split() interprets backslashes as escape characters
     if _contains_windows_path(command_string):

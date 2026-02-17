@@ -66,10 +66,16 @@ async def bash_security_hook(
             }
         }
 
-    # Now safe to access command
+    # Now safe to access command — block empty/whitespace commands (fail-closed)
     command = tool_input.get("command", "")
-    if not command:
-        return {}
+    if not command or not command.strip():
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": "Empty or whitespace-only command",
+            }
+        }
 
     # Get the working directory from context or use current directory
     # Priority:
